@@ -5,9 +5,12 @@ import threading
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 from scraping_bee import ScrapingBee
 from time import sleep
 from typing import List, Dict, Any, Optional
+
+load_dotenv()
 
 _csv_lock = threading.Lock()
 
