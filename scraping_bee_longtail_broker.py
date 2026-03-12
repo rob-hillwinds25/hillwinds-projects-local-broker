@@ -1,11 +1,31 @@
 import csv
+import os
 import re
+import threading
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from scraping_bee import ScrapingBee
 from time import sleep
 from typing import List, Dict, Any, Optional
+
+_csv_lock = threading.Lock()
+
+CSV_COLUMNS = [
+    "agency_name",
+    "agency_website",
+    "agency_street_address",
+    "agency_city",
+    "agency_state",
+    "agency_zip_code",
+    "agency_google_rating",
+    "agency_number_google_ratings",
+    "agency_google_map_category",
+    "agency_phone_number",
+    "agency_google_cid",
+    "agency_insert_category",
+    "search_query",
+]
 
 
 class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
@@ -255,6 +275,34 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
             f"(skipped {len(rows) - len(new_rows)} duplicates)."
         )
 
+    def write_maps_results_to_csv(
+        self,
+        res: Dict[str, Any],
+        csv_path: str,
+        search_query: Optional[str] = None,
+    ) -> None:
+        """
+        Append parsed maps results to a local CSV file.
+        Thread-safe: uses a module-level lock so concurrent threads
+        don't corrupt the file.
+        """
+        rows = self._parse_maps_results(res)
+        if not rows:
+            return
+
+        file_exists = os.path.isfile(csv_path)
+
+        with _csv_lock:
+            with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+                if not file_exists or os.path.getsize(csv_path) == 0:
+                    writer.writeheader()
+                for row in rows:
+                    row["search_query"] = search_query
+                    writer.writerow(row)
+
+        print(f"Wrote {len(rows)} rows to {csv_path} (query: {search_query})")
+
 
 def _chunk_list(lst, n):
     """Split lst into n (roughly) equal non-empty chunks."""
@@ -272,7 +320,7 @@ def _chunk_list(lst, n):
     return chunks
 
 
-def _process_city_batch(cities_batch, titles, company_types):
+def _process_city_batch(cities_batch, titles, company_types, csv_path=None):
     """Worker function run in each thread."""
     bee = ScrapingBeeLongtailBrokerGoogleSearch()
 
@@ -288,9 +336,16 @@ def _process_city_batch(cities_batch, titles, company_types):
             )
 
             for city_search_res_page in city_search_res:
-                bee.write_maps_results_to_supabase(
-                    city_search_res_page, source_city=agency_city
-                )
+                if csv_path:
+                    bee.write_maps_results_to_csv(
+                        city_search_res_page,
+                        csv_path=csv_path,
+                        search_query=city_search_string,
+                    )
+                else:
+                    bee.write_maps_results_to_supabase(
+                        city_search_res_page, source_city=agency_city
+                    )
 
                 # Personnel linkedin url search via google search
                 """
@@ -451,13 +506,18 @@ def main(num_threads: int = 3):
         "general contractor",
     ]
 
+    # Set to a file path to write results locally instead of Supabase.
+    # e.g. csv_output = "local_services_results.csv"
+    # Set to None to write to Supabase instead.
+    csv_output = "local_services_results.csv"
+
     city_batches = _round_robin_split(cities, num_threads)
 
     print(f"Running with {len(city_batches)} threads...")
 
     with ThreadPoolExecutor(max_workers=len(city_batches)) as executor:
         futures = [
-            executor.submit(_process_city_batch, batch, titles, company_types)
+            executor.submit(_process_city_batch, batch, titles, company_types, csv_output)
             for batch in city_batches
         ]
 
