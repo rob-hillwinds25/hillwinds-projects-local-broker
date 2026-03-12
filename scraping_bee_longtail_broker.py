@@ -96,7 +96,7 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
                     "agency_google_map_category": item.get("category"),
                     "agency_phone_number": phone,
                     "agency_google_cid": item.get("cid"),
-                    "agency_insert_category": "feb_longtail_broker_maps_only",
+                    "agency_insert_category": "local_services_county_maps",
                 }
             )
 
@@ -183,6 +183,8 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
                 if len(row) < 2:
                     continue  # skip malformed rows
                 city = row[0].strip()
+                if city.startswith("#"):
+                    continue  # skip comment / section-header rows
                 state = row[1].strip()
                 city_state_list.append(f"{city}, {state}")
 
@@ -412,60 +414,42 @@ def _round_robin_split(lst, n):
 
 
 def main(num_threads: int = 3):
-    # TEST _PROCESS_CITY_BATCH
     loader_bee = ScrapingBeeLongtailBrokerGoogleSearch()
 
-    cities = loader_bee.load_city_state_list("longtail_broker_cities.csv")
+    # Cities spanning Clark County NV, Washoe County NV,
+    # Los Angeles County CA, Orange County CA, and Stanislaus County CA
+    cities = loader_bee.load_city_state_list("county_cities.csv")
 
     print(f"Total cities: {len(cities)}")
     sleep(10)
 
+    # Job titles used for the (currently commented-out) LinkedIn personnel search
     titles = [
-        "Benefits Advisor",
-        "Health Insurance Agent",
-        "Account Executive",
-        "Agency Owner",
-        "Broker",
-        "Benefits Consultant",
-        "President",
         "Owner",
         "CEO",
-        "Producer",
-        "VP",
+        "President",
+        "COO",
+        "General Manager",
+        "Office Manager",
+        "Director",
         "Principal",
         "Partner",
-        "Account Manager",
-        "Client Executive",
-        "Director",
-        "Practice Leader",
-        "Managing Director",
     ]
 
-    company_types = ["insurance agency"]
-
-    # titles = ["CEO", "Owner", "President", "COO", "Chief Operations", "Controller"]
-
-    # company_types = [
-    #    "hvac contactor",
-    #    "plumbing contractor",
-    #    "electrical contractor",
-    #    "roofing company",
-    #    "landscaping and hardscaping",
-    #    "general contractor",
-    #    "pest control service",
-    #    "welding and fabrication",
-    #    "painting contactor",
-    #    "concrete and masonry",
-    #    "flooring installation",
-    #    "elevator and escalator mechanic",
-    #    "solar and renewable energy contactor",
-    #    "fire protection services",
-    #    "excavation and site preparation",
-    #    "automotive repair shop",
-    #    "fence installation",
-    #    "restoration and abatement",
-    #    "garage door contractor",
-    # ]
+    # Target industries across the five counties
+    company_types = [
+        "pool service company",
+        "nonprofit organization",
+        "auto repair shop",
+        "car dealership",
+        "veterinary clinic",
+        "medical doctor office",
+        "optometrist",
+        "dental office",
+        "electrician",
+        "plumber",
+        "general contractor",
+    ]
 
     city_batches = _round_robin_split(cities, num_threads)
 
@@ -473,8 +457,7 @@ def main(num_threads: int = 3):
 
     with ThreadPoolExecutor(max_workers=len(city_batches)) as executor:
         futures = [
-            # Update the batch type you are processing here
-            executor.submit(_process_city_batch_with_supabase_agencies, batch, titles)
+            executor.submit(_process_city_batch, batch, titles, company_types)
             for batch in city_batches
         ]
 
