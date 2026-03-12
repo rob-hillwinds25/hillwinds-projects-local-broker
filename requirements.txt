@@ -1,0 +1,8 @@
+python-dotenv
+supabase
+
+# The scraping_bee package is an internal library.
+# Install it separately before running:
+#   pip install /path/to/scraping_bee
+# or if distributed as a wheel/tarball:
+#   pip install scraping_bee-*.whl

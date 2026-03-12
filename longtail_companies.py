@@ -1,11 +1,34 @@
 import csv
+import os
 import re
+import threading
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 from scraping_bee import ScrapingBee
 from time import sleep
 from typing import List, Dict, Any, Optional
+
+load_dotenv()
+
+_csv_lock = threading.Lock()
+
+CSV_COLUMNS = [
+    "company_name",
+    "company_website",
+    "company_street_address",
+    "company_city",
+    "company_state",
+    "company_zip_code",
+    "company_google_rating",
+    "company_number_google_ratings",
+    "company_google_map_category",
+    "company_phone_number",
+    "company_google_cid",
+    "company_insert_category",
+    "search_query",
+]
 
 
 class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
@@ -20,10 +43,10 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
         street = city = state = zip_code = None
         if not address:
             return {
-                "agency_street_address": street,
-                "agency_city": city,
-                "agency_state": state,
-                "agency_zip_code": zip_code,
+                "company_street_address": street,
+                "company_city": city,
+                "company_state": state,
+                "company_zip_code": zip_code,
             }
 
         parts = [p.strip() for p in address.split(",")]
@@ -44,10 +67,10 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
             state = m.group(1).upper()
             zip_code = m.group(2)
             return {
-                "agency_street_address": street,
-                "agency_city": city,
-                "agency_state": state,
-                "agency_zip_code": zip_code,
+                "company_street_address": street,
+                "company_city": city,
+                "company_state": state,
+                "company_zip_code": zip_code,
             }
 
         # Otherwise extract zip if present
@@ -65,10 +88,10 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
                 state = state_token
 
         return {
-            "agency_street_address": street,
-            "agency_city": city,
-            "agency_state": state,
-            "agency_zip_code": zip_code,
+            "company_street_address": street,
+            "company_city": city,
+            "company_state": state,
+            "company_zip_code": zip_code,
         }
 
     def _parse_maps_results(self, res: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -85,18 +108,18 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
 
             rows.append(
                 {
-                    "agency_name": item.get("title"),
-                    "agency_website": item.get("link"),
-                    "agency_street_address": address_fields["agency_street_address"],
-                    "agency_city": address_fields["agency_city"],
-                    "agency_state": address_fields["agency_state"],
-                    "agency_zip_code": address_fields["agency_zip_code"],
-                    "agency_google_rating": item.get("rating"),
-                    "agency_number_google_ratings": item.get("reviews"),
-                    "agency_google_map_category": item.get("category"),
-                    "agency_phone_number": phone,
-                    "agency_google_cid": item.get("cid"),
-                    "agency_insert_category": "feb_longtail_broker_maps_only",
+                    "company_name": item.get("title"),
+                    "company_website": item.get("link"),
+                    "company_street_address": address_fields["company_street_address"],
+                    "company_city": address_fields["company_city"],
+                    "company_state": address_fields["company_state"],
+                    "company_zip_code": address_fields["company_zip_code"],
+                    "company_google_rating": item.get("rating"),
+                    "company_number_google_ratings": item.get("reviews"),
+                    "company_google_map_category": item.get("category"),
+                    "company_phone_number": phone,
+                    "company_google_cid": item.get("cid"),
+                    "company_insert_category": "local_services_county_maps",
                 }
             )
 
@@ -104,7 +127,7 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
 
     def check_google_cid_exists(self, google_cid):
         """
-        Checks if the given google_cide exists in the 'agency_google_cid' field
+        Checks if the given google_cide exists in the 'company_google_cid' field
         of the 'sb_google_maps_search' table in Supabase. Retries up to 5 times if the request fails.
         Returns True if the CID exists or if all retries fail. Returns False only if the query
         succeeds and the CID does not exist.
@@ -116,8 +139,8 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
             try:
                 response = (
                     self.supabase.table("sb_google_maps_search")
-                    .select("agency_google_cid")
-                    .eq("agency_google_cid", google_cid)
+                    .select("company_google_cid")
+                    .eq("company_google_cid", google_cid)
                     .limit(1)
                     .execute()
                 )
@@ -142,10 +165,10 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
 
             response = (
                 self.supabase.table("sb_google_maps_search")
-                .select("agency_name, agency_city, agency_state, agency_google_cid")
-                .eq("agency_insert_category", "feb_longtail_broker_maps_only")
-                .eq("agency_city", city_name)
-                .eq("agency_state", state_abv)
+                .select("company_name, company_city, company_state, company_google_cid")
+                .eq("company_insert_category", "feb_longtail_broker_maps_only")
+                .eq("company_city", city_name)
+                .eq("company_state", state_abv)
                 .is_("updated_at", "null")
                 .order("created_at", desc=False)
                 .limit(1000)
@@ -159,10 +182,10 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
             for row in response.data:
                 formatted_data.append(
                     {
-                        "agency_name": row["agency_name"],
-                        "agency_city": row["agency_city"],
-                        "agency_state": row["agency_state"],
-                        "agency_google_cid": row["agency_google_cid"],
+                        "company_name": row["company_name"],
+                        "company_city": row["company_city"],
+                        "company_state": row["company_state"],
+                        "company_google_cid": row["company_google_cid"],
                     }
                 )
 
@@ -183,6 +206,8 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
                 if len(row) < 2:
                     continue  # skip malformed rows
                 city = row[0].strip()
+                if city.startswith("#"):
+                    continue  # skip comment / section-header rows
                 state = row[1].strip()
                 city_state_list.append(f"{city}, {state}")
 
@@ -194,12 +219,12 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
         state = parts[1] if len(parts) > 1 else None
         return city, state
 
-    def sb_google_maps_search_updated_at(self, agency_google_cid: str):
+    def sb_google_maps_search_updated_at(self, company_google_cid: str):
         try:
             response = (
                 self.supabase.table("sb_google_maps_search")
                 .update({"updated_at": datetime.now(timezone.utc).isoformat()})
-                .eq("agency_google_cid", agency_google_cid)
+                .eq("company_google_cid", company_google_cid)
                 .execute()
             )
 
@@ -207,7 +232,7 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
             print(response)
             # Optional: Check if any rows were updated
             if response.count == 0:
-                print(f"No row found for agency_google_cid: {agency_google_cid}")
+                print(f"No row found for company_google_cid: {company_google_cid}")
             return response
         except Exception as e:
             print(f"Error updating updated_at in Supabase: {e}")
@@ -221,7 +246,7 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
     ) -> None:
         """
         Insert parsed rows into 'sb_google_maps_search' table only if the
-        agency_google_cid does not already exist.
+        company_google_cid does not already exist.
         """
         rows = self._parse_maps_results(res)
         if not rows:
@@ -231,10 +256,10 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
         table = "sb_google_maps_search"
 
         new_rows = []
-        # Querying for all agency_google_cid in the table can timeout
+        # Querying for all company_google_cid in the table can timeout
         for row in rows:
             sleep(1)
-            cid_exists = self.check_google_cid_exists(row["agency_google_cid"])
+            cid_exists = self.check_google_cid_exists(row["company_google_cid"])
 
             if not cid_exists:
                 new_rows.append(row)
@@ -253,6 +278,34 @@ class ScrapingBeeLongtailBrokerGoogleSearch(ScrapingBee):
             f"(skipped {len(rows) - len(new_rows)} duplicates)."
         )
 
+    def write_maps_results_to_csv(
+        self,
+        res: Dict[str, Any],
+        csv_path: str,
+        search_query: Optional[str] = None,
+    ) -> None:
+        """
+        Append parsed maps results to a local CSV file.
+        Thread-safe: uses a module-level lock so concurrent threads
+        don't corrupt the file.
+        """
+        rows = self._parse_maps_results(res)
+        if not rows:
+            return
+
+        file_exists = os.path.isfile(csv_path)
+
+        with _csv_lock:
+            with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+                if not file_exists or os.path.getsize(csv_path) == 0:
+                    writer.writeheader()
+                for row in rows:
+                    row["search_query"] = search_query
+                    writer.writerow(row)
+
+        print(f"Wrote {len(rows)} rows to {csv_path} (query: {search_query})")
+
 
 def _chunk_list(lst, n):
     """Split lst into n (roughly) equal non-empty chunks."""
@@ -270,7 +323,7 @@ def _chunk_list(lst, n):
     return chunks
 
 
-def _process_city_batch(cities_batch, titles, company_types):
+def _process_city_batch(cities_batch, titles, company_types, csv_path=None):
     """Worker function run in each thread."""
     bee = ScrapingBeeLongtailBrokerGoogleSearch()
 
@@ -279,34 +332,41 @@ def _process_city_batch(cities_batch, titles, company_types):
             print(f"[THREAD {id(bee)}] Searching in city: {city}")
             city_search_string = f"{company_type} in {city}"
 
-            agency_city, agency_state = bee.parse_city_state(city)
+            company_city, company_state = bee.parse_city_state(city)
 
             city_search_res = bee.google_search(
                 search=city_search_string, search_type="maps", pages=20, max_retries=2
             )
 
             for city_search_res_page in city_search_res:
-                bee.write_maps_results_to_supabase(
-                    city_search_res_page, source_city=agency_city
-                )
+                if csv_path:
+                    bee.write_maps_results_to_csv(
+                        city_search_res_page,
+                        csv_path=csv_path,
+                        search_query=city_search_string,
+                    )
+                else:
+                    bee.write_maps_results_to_supabase(
+                        city_search_res_page, source_city=company_city
+                    )
 
                 # Personnel linkedin url search via google search
                 """
                 for map_result in city_search_res_page.get("maps_results", []):
-                    agency_name = map_result["title"]
+                    company_name = map_result["title"]
                     for job_title in titles:
-                        agency_search_string = (
-                            f'site:linkedin.com/in "{agency_name}" '
-                            f"{agency_city} {agency_state} {job_title}"
+                        company_search_string = (
+                            f'site:linkedin.com/in "{company_name}" '
+                            f"{company_city} {company_state} {job_title}"
                         )
 
-                        agency_search_res = bee.google_search(
-                            search=agency_search_string
+                        company_search_res = bee.google_search(
+                            search=company_search_string
                         )
 
                         db_input = (
                             bee.parse_google_search_results_for_personnel_li_urls(
-                                agency_search_res, agency_search_string
+                                company_search_res, company_search_string
                             )
                         )
 
@@ -342,21 +402,21 @@ def _process_city_batch_with_supabase_agencies(cities_batch, titles):
                 )
 
                 # Personnel linkedin url search via google search):
-                agency_name = company["agency_name"]
-                agency_city = company["agency_city"]
-                agency_state = company["agency_state"]
-                agency_google_cid = company["agency_google_cid"]
+                company_name = company["company_name"]
+                company_city = company["company_city"]
+                company_state = company["company_state"]
+                company_google_cid = company["company_google_cid"]
 
                 for job_title in titles:
-                    agency_search_string = (
-                        f'site:linkedin.com/in "{agency_name}" '
-                        f"{agency_city} {agency_state} {job_title}"
+                    company_search_string = (
+                        f'site:linkedin.com/in "{company_name}" '
+                        f"{company_city} {company_state} {job_title}"
                     )
 
-                    agency_search_res = bee.google_search(search=agency_search_string)
+                    company_search_res = bee.google_search(search=company_search_string)
 
                     db_input = bee.parse_google_search_results_for_personnel_li_urls(
-                        agency_search_res, agency_search_string
+                        company_search_res, company_search_string
                     )
 
                     bee.write_contacts_to_supabase(
@@ -367,7 +427,7 @@ def _process_city_batch_with_supabase_agencies(cities_batch, titles):
 
                     sleep(1)  # keep your pacing to avoid rate limit issues
 
-                bee.sb_google_maps_search_updated_at(agency_google_cid)
+                bee.sb_google_maps_search_updated_at(company_google_cid)
 
 
 def _process_supabase_batch(supabase_company_batch, titles):
@@ -378,21 +438,21 @@ def _process_supabase_batch(supabase_company_batch, titles):
         print(f"[THREAD {id(bee)}] Searching for personnel with info: {company}")
 
         # Personnel linkedin url search via google search):
-        agency_name = company["agency_name"]
-        agency_city = company["agency_city"]
-        agency_state = company["agency_state"]
-        agency_google_cid = company["agency_google_cid"]
+        company_name = company["company_name"]
+        company_city = company["company_city"]
+        company_state = company["company_state"]
+        company_google_cid = company["company_google_cid"]
 
         for job_title in titles:
-            agency_search_string = (
-                f'site:linkedin.com/in "{agency_name}" '
-                f"{agency_city} {agency_state} {job_title}"
+            company_search_string = (
+                f'site:linkedin.com/in "{company_name}" '
+                f"{company_city} {company_state} {job_title}"
             )
 
-            agency_search_res = bee.google_search(search=agency_search_string)
+            company_search_res = bee.google_search(search=company_search_string)
 
             db_input = bee.parse_google_search_results_for_personnel_li_urls(
-                agency_search_res, agency_search_string
+                company_search_res, company_search_string
             )
 
             bee.write_contacts_to_supabase(
@@ -403,7 +463,7 @@ def _process_supabase_batch(supabase_company_batch, titles):
 
             sleep(1)  # keep your pacing to avoid rate limit issues
 
-        bee.sb_google_maps_search_updated_at(agency_google_cid)
+        bee.sb_google_maps_search_updated_at(company_google_cid)
 
 
 def _round_robin_split(lst, n):
@@ -412,60 +472,47 @@ def _round_robin_split(lst, n):
 
 
 def main(num_threads: int = 3):
-    # TEST _PROCESS_CITY_BATCH
     loader_bee = ScrapingBeeLongtailBrokerGoogleSearch()
 
-    cities = loader_bee.load_city_state_list("longtail_broker_cities.csv")
+    # Cities spanning Clark County NV, Washoe County NV,
+    # Los Angeles County CA, Orange County CA, and Stanislaus County CA
+    cities = loader_bee.load_city_state_list("county_cities.csv")
 
     print(f"Total cities: {len(cities)}")
     sleep(10)
 
+    # Job titles used for the (currently commented-out) LinkedIn personnel search
     titles = [
-        "Benefits Advisor",
-        "Health Insurance Agent",
-        "Account Executive",
-        "Agency Owner",
-        "Broker",
-        "Benefits Consultant",
-        "President",
         "Owner",
         "CEO",
-        "Producer",
-        "VP",
+        "President",
+        "COO",
+        "General Manager",
+        "Office Manager",
+        "Director",
         "Principal",
         "Partner",
-        "Account Manager",
-        "Client Executive",
-        "Director",
-        "Practice Leader",
-        "Managing Director",
     ]
 
-    company_types = ["insurance agency"]
+    # Target industries across the five counties
+    company_types = [
+        "pool service company",
+        "nonprofit organization",
+        "auto repair shop",
+        "car dealership",
+        "veterinary clinic",
+        "medical doctor office",
+        "optometrist",
+        "dental office",
+        "electrician",
+        "plumber",
+        "general contractor",
+    ]
 
-    # titles = ["CEO", "Owner", "President", "COO", "Chief Operations", "Controller"]
-
-    # company_types = [
-    #    "hvac contactor",
-    #    "plumbing contractor",
-    #    "electrical contractor",
-    #    "roofing company",
-    #    "landscaping and hardscaping",
-    #    "general contractor",
-    #    "pest control service",
-    #    "welding and fabrication",
-    #    "painting contactor",
-    #    "concrete and masonry",
-    #    "flooring installation",
-    #    "elevator and escalator mechanic",
-    #    "solar and renewable energy contactor",
-    #    "fire protection services",
-    #    "excavation and site preparation",
-    #    "automotive repair shop",
-    #    "fence installation",
-    #    "restoration and abatement",
-    #    "garage door contractor",
-    # ]
+    # Set to a file path to write results locally instead of Supabase.
+    # e.g. csv_output = "local_services_results.csv"
+    # Set to None to write to Supabase instead.
+    csv_output = "local_services_results.csv"
 
     city_batches = _round_robin_split(cities, num_threads)
 
@@ -473,8 +520,7 @@ def main(num_threads: int = 3):
 
     with ThreadPoolExecutor(max_workers=len(city_batches)) as executor:
         futures = [
-            # Update the batch type you are processing here
-            executor.submit(_process_city_batch_with_supabase_agencies, batch, titles)
+            executor.submit(_process_city_batch, batch, titles, company_types, csv_output)
             for batch in city_batches
         ]
 
